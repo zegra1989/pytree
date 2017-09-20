@@ -313,12 +313,13 @@ class TestDataNode(DataNode):
                 self.n_directions += 1
             else:
                 self.is_increase = True
-                self.n_directions += 1
+                self.n_directions = 1
         self.last_insert_pos = key
 
     def update(self, key, doc):
         docs = self.data.get(key, [])
         docs.append(doc)
+        self._low_key = min(self.data.keys())
 
     def isfull(self):
         return len(self.data) == self.max_length
@@ -326,17 +327,16 @@ class TestDataNode(DataNode):
     def split(self, mode=None):
         new_node = TestDataNode(self.max_length)
 
-        if mode is None:
-            for key in sorted(self.data)[self.ibase:]:
-                new_node.insert(key, self.data.pop(key))
-        elif mode is DataNode.F_INCREASE:
+        if mode is DataNode.F_INCREASE:
             key = sorted(self.data)[-1]
             new_node.insert(key, self.data.pop(key))
         elif mode is DataNode.F_DECREASE:
             key = sorted(self.data)[0]
             new_node.insert(key, self.data.pop(key))
+            self._low_key = min(self.data.keys())
         else:
-            raise NotImplementedError()
+            for key in sorted(self.data)[self.ibase:]:
+                new_node.insert(key, self.data.pop(key))
 
         return new_node
 
@@ -421,3 +421,22 @@ class TestBPlusTree(BPlusTree):
 # # print datanode.prev
 # # print datanode.next
 # # print datanode.next.next.next
+
+
+tree = TestBPlusTree(2)
+# tree.insert(0, 0)
+tree.insert(100, 100)
+tree.insert(90, 90)
+tree.insert(80, 80)
+tree.insert(70, 70)
+tree.insert(60, 60)
+tree.insert(65, 65)
+
+# import pdb
+# pdb.set_trace()
+
+tree.insert(50, 50)
+tree.insert(40, 40)
+
+
+print tree
