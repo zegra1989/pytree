@@ -36,6 +36,10 @@ class DataNode(object):
 
         self.data = None
         self.max_length = max_length
+        base, mode = divmod(self.max_length, 2)
+        if mode > 0:
+            base += 1
+        self.min_length = base
 
         # 记录上一次插入的数据
         self.last_insert_pos = None
@@ -249,7 +253,35 @@ class BPlusTree(object):
         return self.insert_nonfull(new_root, key, doc)
 
     def merge(self, node, ipos):
-        pass
+        """
+            将当前节点 关键词 对应的孩子与其 左/右兄弟 合并
+            ipos 是 node.keys 中关键词的位置
+        """
+
+        # 当前节点没有右兄弟
+        if ipos == node.num-1:
+            ipos -= 1
+
+        child = node.pnodes[ipos]
+        rchild = node.pnodes[ipos+1]
+
+        irpos = 0
+        while irpos < rchild.num:
+            child.keys[child.num+irpos] = rchild.keys[irpos]
+            child.pnodes[child.num+irpos] = rchild.pnodes[irpos]
+            irpos += 1
+        child.num += rchild.num
+
+        self.deallocate_namenode(rchild)
+
+        inpos = ipos
+        while inpos < node.num-1:
+            node.keys[inpos] = node.keys[inpos+1]
+            node.pnodes[inpos] = node.pnodes[inpos+1]
+            inpos += 1
+
+        node.num += 1
+        return inpos
 
     def pop(self, node=None, autoshrink=True):
         pass
@@ -261,10 +293,98 @@ class BPlusTree(object):
         pass
 
     def guarantee(self, node, ipos):
-        pass
+        """
+            确保 node.pnode[ipos] 拥有至少 t 个关键词
+        """
+
+        child = node.pnodes[ipos]
+        if child.num >= self.degree:
+            return ipos
+
+        # 如果 ipos = 0，则 child 没有左兄弟
+        if ipos > 0:
+            lbrother = node.pnodes[ipos-1]
+            if lbrother.num >= self.degree:
+                icpos = child.num
+                while icpos > 0:
+                    child.keys[icpos] = child.keys[icpos-1]
+                    child.pnodes[icpos] = child.pnodes[icpos-1]
+                    icpos -= 1
+                child.keys[0] = lbrother.keys[lbrother.num-1]
+                child.pnodes[0] = lbrother.keys[lbrother.num-1]
+                child.num += 1
+
+                node.keys[ipos] = child.keys[0]
+                lbrother.num -= 1
+                return ipos
+
+        # 如果 ipos = node.num-1， 则 child 没有右兄弟
+        if ipos < node.num-1:
+            rbrother = node.pnodes[ipos+1]
+            if rbrother.num >= self.degree:
+                child.keys[child.num] = rbrother.keys[0]
+                child.pnodes[child.num] = rbrother.pnodes[0]
+                child += 1
+
+                irpos = 0
+                while irpos < rbrother.num-1:
+                    rbrother.keys[irpos] = rbrother.keys[irpos+1]
+                    rbrother.pnodes[irpos] = rbrother.keys[irpos+1]
+                    irpos += 1
+
+                node.keys[ipos+1] = rbrother.keys[0]
+                rbrother.num -= 1
+                return ipos
+
+        return self.merge(node, ipos)
 
     def remove_key(self, node, key):
-        pass
+        ipos = node.num-1
+        while ipos >= 0 and key < node.keys[ipos]:
+            ipos -= 1
+
+        # 如果 ipos < 0，则说明没有找到要删除的节点
+        if ipos < 0:
+            return -1
+
+        while node.isleaf is False:
+            node = node.pnodes[self.guarantee(node, ipos)]
+            ipos = node.num-1
+            while ipos >= 0 and key < node.keys[ipos]:
+                ipos -= 1
+
+        # TODO
+        datanode = node.pnodes[ipos]
+        if datanode.num > datanode.min_length:
+            datanode.remove(key)
+            node.keys[ipos] = datanode.low_key
+            return 0
+
+        if ipos > 0:
+            lbrother = node.pnodes[ipos-1]
+            if lbrother.num > lbrother.min_length:
+                lkey, ldoc = lbrother.pop()
+                datanode.insert(lkey, ldoc)
+                node.keys[ipos] = lkey
+                datanode.remove(key)
+                node.keys[ipos] = datanode.low_key
+                return 0
+
+        if ipos < node.num-1:
+            rbrother = node.pnodes[ipos+1]
+            if rbrother.num > rbrother.min_length:
+                rkey, rdoc = rbrother.shift()
+                datanode.insert(rkey, rdoc)
+                node.keys[ipos+1] = rbrother.low_key
+                datanode.remove(key)
+                node.keys[ipos] = datanode.low_key
+                return 0
+
+        ipos = self.merge(node, ipos)
+        datanode = node.pnodes[ipos]
+        datanode.remove(key)
+        node.keys[ipos] = datanode.low_key
+        return 0
 
     def remove(self, key):
         pass
@@ -288,12 +408,6 @@ class TestDataNode(DataNode):
     def __init__(self, max_length=4):
         super(TestDataNode, self).__init__(max_length)
         self.data = {}
-
-        # 计算 split 时需要移动的数据个数
-        base, mode = divmod(self.max_length, 2)
-        if mode > 0:
-            base += 1
-        self.ibase = base
 
     def insert(self, key, doc):
         if isinstance(doc, list,) is True and len(doc) == 1:
@@ -335,7 +449,7 @@ class TestDataNode(DataNode):
             new_node.insert(key, self.data.pop(key))
             self._low_key = min(self.data.keys())
         else:
-            for key in sorted(self.data)[self.ibase:]:
+            for key in sorted(self.data)[self.min_length:]:
                 new_node.insert(key, self.data.pop(key))
 
         return new_node
