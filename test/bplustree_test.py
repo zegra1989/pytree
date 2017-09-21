@@ -37,7 +37,7 @@ class MemBPlusTreeTest(unittest.TestCase):
             self.assertIsNotNone(node)
             tree.remove(num)
             node = tree.search(num)
-            self.assertTrue(num not in node.data)
+            self.assertTrue(node is None or num not in node.data)
 
     def test_degree3(self):
         tree = MemBPlusTree(3)
@@ -77,7 +77,7 @@ class MemBPlusTreeTest(unittest.TestCase):
 
         self.random_search(tree, seq)
 
-        self.assertEqual(tree.select(key), [value])
+        self.assertEqual(tree.select(key).data[key], [value])
 
     def test_update(self):
         pass
