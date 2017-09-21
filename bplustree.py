@@ -257,6 +257,8 @@ class BPlusTree(object):
         child = node.pnodes[ipos]
         if child.num == self.threshold:
             self.split(node, ipos, child)
+        if node.keys[ipos+1] is not None and node.keys[ipos+1] < key:
+            child = node.pnodes[ipos+1]
         return self.insert_nonfull(child, key, doc)
 
     def insert(self, key, doc):
@@ -568,61 +570,56 @@ class MemBPlusTree(BPlusTree):
 
 
 
-# import random
+import random
 
-# def test(length):
+def test(length):
 
-#     tree = MemBPlusTree(4)  
-#     seq = set()
-#     while len(seq) != length:
-#         seq.add(int(random.random()*1000))
-#     seq = list(seq)
+    tree = MemBPlusTree(2)  
+    seq = set()
+    while len(seq) != length:
+        seq.add(int(random.random()*1000))
+    seq = list(seq)
 
-#     random.shuffle(seq)
-#     for num in seq:
-#         tree.insert(num, num)
+    random.shuffle(seq)
+    for num in seq:
+        tree.insert(num, num)
 
-#     archive = list(seq)
-#     random.shuffle(seq)
-#     search = list(seq)
+    archive = list(seq)
+    random.shuffle(seq)
+    search = list(seq)
 
-#     for num in seq:
-#         node = tree.search(num)
-#         if node is None:
-#             print "**************************"
-#             print num
-#             print archive
-#             print search
-#             print "**************************"
-#             exit()
-#         try:
-#             tree.remove(num)
-#         except Exception as e:
-#             print "==========================="
-#             print num
-#             print archive
-#             print search
-#             print "==========================="
-#             exit()
+    for num in seq:
+        node = tree.search(num)
+        if node is None:
+            print "**************************"
+            print num
+            print archive
+            print search
+            print "**************************"
+            exit()
+        try:
+            tree.remove(num)
+        except Exception as e:
+            print "==========================="
+            print num
+            print archive
+            print search
+            print "==========================="
+            exit()
 
-#         node = tree.search(num)
-#         if node is not None and num in node.data:
-#             print "+++++++++++++++++++++++++"
-#             print num
-#             print archive
-#             print search
-#             print "+++++++++++++++++++++++++"
-#             exit()
-
-
-# LOOP = 10000
-# LENGTH = 100
-# for length in xrange(1, LENGTH):
-#     print "Testing...", length
-#     for _ in xrange(LOOP):
-#         test(length)
+        node = tree.search(num)
+        if node is not None and num in node.data:
+            print "+++++++++++++++++++++++++"
+            print num
+            print archive
+            print search
+            print "+++++++++++++++++++++++++"
+            exit()
 
 
-# 639
-# [994, 788, 200, 657, 130, 84, 135, 104, 768, 787, 789, 354, 762, 531, 973, 673, 530, 890, 928, 965, 739, 3, 168, 91, 136, 176, 666, 596, 114, 639]
-# [673, 91, 596, 890, 994, 973, 928, 354, 739, 168, 768, 3, 135, 176, 200, 104, 530, 762, 965, 136, 788, 639, 789, 114, 130, 531, 787, 657, 84, 666]
+LOOP = 100000
+LENGTH = 100
+for length in xrange(1, LENGTH):
+    print "Testing...", length
+    for _ in xrange(LOOP):
+        test(length)
