@@ -41,6 +41,8 @@ class DataNode(object):
             base += 1
         self.min_length = base
 
+        self.num = 0
+
         # 记录上一次插入的数据
         self.last_insert_pos = None
         # 连续递增标识
@@ -85,7 +87,13 @@ class DataNode(object):
     def isfull(self):
         raise NotImplementedError()
 
+    def isguarenteed(self):
+        raise NotImplementedError()
+
     def split(self, mode=None):
+        raise NotImplementedError()
+
+    def merge(self, datanode):
         raise NotImplementedError()
 
     @property
@@ -123,6 +131,12 @@ class BPlusTree(object):
         res = self.remove_key(self.root, key)
         self.shrink()
         return res
+
+    def shrink(self):
+        if self.root.num == 1 and self.root.isleaf is False:
+            old_root = self.root
+            self.root = old_root.pnodes[0]
+            self.deallocate_namenode(old_root)
 
     def update(self, key, doc):
         docs = self.search(key)
@@ -225,11 +239,19 @@ class BPlusTree(object):
                 # 此处不用连接 DataNode 的链表，因为此处仅在初始化时运行一次
 
             if datanode.isfull() is True:
+                if datanode.is_increase is True and datanode.last_insert_pos > key:
+                    datanode.is_increase = False
+                    datanode.n_directions = 1
+                elif datanode.is_increase is False and datanode.last_insert_pos < key:
+                    datanode.is_increase = True
+                    datanode.n_directions = 1
                 self.split(node, ipos, datanode)
                 if node.keys[ipos+1] < key:
                     ipos += 1
 
-            node.pnodes[ipos].insert(key, doc)
+            datanode = node.pnodes[ipos]
+            datanode.insert(key, doc)
+            node.keys[ipos] = datanode.low_key
             return None
 
         child = node.pnodes[ipos]
@@ -265,32 +287,27 @@ class BPlusTree(object):
         child = node.pnodes[ipos]
         rchild = node.pnodes[ipos+1]
 
-        irpos = 0
-        while irpos < rchild.num:
-            child.keys[child.num+irpos] = rchild.keys[irpos]
-            child.pnodes[child.num+irpos] = rchild.pnodes[irpos]
-            irpos += 1
-        child.num += rchild.num
+        if node.isleaf is True:
+            child.merge(rchild)
+            self.deallocate_datanode(rchild)
+        else:
+            irpos = 0
+            while irpos < rchild.num:
+                # TODO
+                child.keys[child.num+irpos] = rchild.keys[irpos]
+                child.pnodes[child.num+irpos] = rchild.pnodes[irpos]
+                irpos += 1
+            child.num += rchild.num
+            self.deallocate_namenode(rchild)
 
-        self.deallocate_namenode(rchild)
-
-        inpos = ipos
+        inpos = ipos+1
         while inpos < node.num-1:
             node.keys[inpos] = node.keys[inpos+1]
             node.pnodes[inpos] = node.pnodes[inpos+1]
             inpos += 1
+        node.num -= 1
 
-        node.num += 1
-        return inpos
-
-    def pop(self, node=None, autoshrink=True):
-        pass
-
-    def shift(self, node=None, autoshrink=True):
-        pass
-
-    def shrink(self):
-        pass
+        return ipos
 
     def guarantee(self, node, ipos):
         """
@@ -298,20 +315,20 @@ class BPlusTree(object):
         """
 
         child = node.pnodes[ipos]
-        if child.num >= self.degree:
+        if child.num > self.degree:
             return ipos
 
         # 如果 ipos = 0，则 child 没有左兄弟
         if ipos > 0:
             lbrother = node.pnodes[ipos-1]
-            if lbrother.num >= self.degree:
+            if lbrother.num > self.degree:
                 icpos = child.num
                 while icpos > 0:
                     child.keys[icpos] = child.keys[icpos-1]
                     child.pnodes[icpos] = child.pnodes[icpos-1]
                     icpos -= 1
                 child.keys[0] = lbrother.keys[lbrother.num-1]
-                child.pnodes[0] = lbrother.keys[lbrother.num-1]
+                child.pnodes[0] = lbrother.pnodes[lbrother.num-1]
                 child.num += 1
 
                 node.keys[ipos] = child.keys[0]
@@ -321,15 +338,15 @@ class BPlusTree(object):
         # 如果 ipos = node.num-1， 则 child 没有右兄弟
         if ipos < node.num-1:
             rbrother = node.pnodes[ipos+1]
-            if rbrother.num >= self.degree:
+            if rbrother.num > self.degree:
                 child.keys[child.num] = rbrother.keys[0]
                 child.pnodes[child.num] = rbrother.pnodes[0]
-                child += 1
+                child.num += 1
 
                 irpos = 0
                 while irpos < rbrother.num-1:
                     rbrother.keys[irpos] = rbrother.keys[irpos+1]
-                    rbrother.pnodes[irpos] = rbrother.keys[irpos+1]
+                    rbrother.pnodes[irpos] = rbrother.pnodes[irpos+1]
                     irpos += 1
 
                 node.keys[ipos+1] = rbrother.keys[0]
@@ -345,49 +362,56 @@ class BPlusTree(object):
 
         # 如果 ipos < 0，则说明没有找到要删除的节点
         if ipos < 0:
-            return -1
+            return None
 
-        while node.isleaf is False:
-            node = node.pnodes[self.guarantee(node, ipos)]
-            ipos = node.num-1
-            while ipos >= 0 and key < node.keys[ipos]:
-                ipos -= 1
+        if node.isleaf is False:
+            icpos = self.guarantee(node, ipos)
+            child = node.pnodes[icpos]
+            self.remove_key(child, key)
+            node.keys[icpos] = node.pnodes[icpos].keys[0]
+            return 0
 
-        # TODO
         datanode = node.pnodes[ipos]
-        if datanode.num > datanode.min_length:
+        if datanode.isguarenteed() is True:
             datanode.remove(key)
             node.keys[ipos] = datanode.low_key
+            return datanode.low_key
+
+        if node.num == 1:
+            datanode.remove(key)
+            if datanode.num > 0:
+                node.keys[ipos] = datanode.low_key
+            else:
+                node.num = 0
+                node.pnodes[0] = None
+                self.deallocate_datanode(datanode)
             return 0
 
         if ipos > 0:
             lbrother = node.pnodes[ipos-1]
-            if lbrother.num > lbrother.min_length:
+            if lbrother.isguarenteed() is True:
                 lkey, ldoc = lbrother.pop()
                 datanode.insert(lkey, ldoc)
                 node.keys[ipos] = lkey
                 datanode.remove(key)
                 node.keys[ipos] = datanode.low_key
-                return 0
+                return datanode.low_key
 
         if ipos < node.num-1:
             rbrother = node.pnodes[ipos+1]
-            if rbrother.num > rbrother.min_length:
+            if rbrother.isguarenteed() is True:
                 rkey, rdoc = rbrother.shift()
                 datanode.insert(rkey, rdoc)
                 node.keys[ipos+1] = rbrother.low_key
                 datanode.remove(key)
                 node.keys[ipos] = datanode.low_key
-                return 0
+                return datanode.low_key
 
         ipos = self.merge(node, ipos)
         datanode = node.pnodes[ipos]
         datanode.remove(key)
         node.keys[ipos] = datanode.low_key
-        return 0
-
-    def remove(self, key):
-        pass
+        return datanode.low_key
 
     def traverse(self, callback, node=None):
         pass
@@ -403,10 +427,10 @@ class BPlusTree(object):
 
 ################################################
 
-class TestDataNode(DataNode):
-    """docstring for TestDataNode"""
+class MemDataNode(DataNode):
+    """docstring for MemDataNode"""
     def __init__(self, max_length=4):
-        super(TestDataNode, self).__init__(max_length)
+        super(MemDataNode, self).__init__(max_length)
         self.data = {}
 
     def insert(self, key, doc):
@@ -428,41 +452,85 @@ class TestDataNode(DataNode):
             else:
                 self.is_increase = True
                 self.n_directions = 1
+        
         self.last_insert_pos = key
+        self.num += 1
 
     def update(self, key, doc):
-        docs = self.data.get(key, [])
-        docs.append(doc)
+        docs = self.data.get(key, None)
+        if docs is not None:
+            docs.append(doc)
+        else:
+            self.data[key] = [doc]
+            self.num += 1
         self._low_key = min(self.data.keys())
 
+    def remove(self, key):
+        del self.data[key]
+        self.num -= 1
+        if len(self.data) > 0:
+            self._low_key = min(self.data.keys())
+        else:
+            self._low_key = None
+
     def isfull(self):
-        return len(self.data) == self.max_length
+        return self.num == self.max_length
+
+    def isguarenteed(self):
+        return self.num > self.min_length
+
+    def pop(self):
+        key = sorted(self.data)[-1]
+        doc = self.data.pop(key)
+        if len(self.data) == 0:
+            self._low_key = None
+        self.num -= 1
+        return key, doc
+
+    def shift(self):
+        key = sorted(self.data)[0]
+        doc = self.data.pop(key)
+        if len(self.data) == 0:
+            self._low_key = None
+        else:
+            self._low_key = min(self.data.keys())
+        self.num -= 1
+        return key, doc
 
     def split(self, mode=None):
-        new_node = TestDataNode(self.max_length)
+        new_node = MemDataNode(self.max_length)
 
         if mode is DataNode.F_INCREASE:
-            key = sorted(self.data)[-1]
-            new_node.insert(key, self.data.pop(key))
+            key, doc = self.pop()
+            new_node.insert(key, doc)
+            self.num -= 1
         elif mode is DataNode.F_DECREASE:
-            key = sorted(self.data)[0]
-            new_node.insert(key, self.data.pop(key))
-            self._low_key = min(self.data.keys())
+            key, doc = self.shift()
+            new_node.insert(key, doc)
+            self.num -= 1
         else:
             for key in sorted(self.data)[self.min_length:]:
                 new_node.insert(key, self.data.pop(key))
+                self.num -= 1
 
         return new_node
 
+    def merge(self, datanode):
+        self.data.update(datanode.data)
+        self.num = len(self.data)
+
     def __str__(self):
+
+        keys = sorted(self.data.keys())
+        values = map(lambda x: self.data[x], keys)
         return "num:{0} keys:{1} docs:{2}, increase:{3}".format(
-                    len(self.data), self.data.keys(), self.data.values(), self.n_directions) 
+                    len(self.data), keys, values, self.n_directions) 
 
 
-class TestBPlusTree(BPlusTree):
-    """docstring for TestBPlusTree"""
+class MemBPlusTree(BPlusTree):
+    """docstring for MemBPlusTree"""
     def __init__(self, degree):
-        super(TestBPlusTree, self).__init__(degree)
+        super(MemBPlusTree, self).__init__(degree)
 
     def allocate_namenode(self):
         return NameNode(self.degree)
@@ -471,7 +539,7 @@ class TestBPlusTree(BPlusTree):
         pass
 
     def allocate_datanode(self):
-        return TestDataNode()
+        return MemDataNode()
 
     def deallocate_datanode(self, node):
         pass
@@ -499,58 +567,62 @@ class TestBPlusTree(BPlusTree):
         return "\n".join(strings).strip() + "\n*****************************\n"
 
 
-# tree = TestBPlusTree(2)
 
-# tree.insert(100, 100)
-# tree.insert(10, 10)
-# tree.insert(50, 50)
-# tree.insert(20, 20)
-# tree.insert(120, 120)
-# tree.insert(70, 70)
-# tree.insert(90, 90)
-# tree.insert(80, 80)
-# tree.insert(60, 60)
-# tree.insert(65, 65)
-# tree.insert(55, 55)
-# tree.insert(54, 54)
-# tree.insert(53, 53)
-# tree.insert(52, 52)
-# tree.insert(51, 51)
+# import random
 
-# # import pdb
-# # pdb.set_trace()
+# def test(length):
 
-# print tree
-# datanode = tree.root.pnodes[0].pnodes[0]
+#     tree = MemBPlusTree(4)  
+#     seq = set()
+#     while len(seq) != length:
+#         seq.add(int(random.random()*1000))
+#     seq = list(seq)
 
-# while datanode is not None:
-#     print datanode
-#     print "prev->", datanode.prev
-#     print "next->", datanode.next
-#     print 
-#     datanode = datanode.next
-    
-# # datanode = tree.root.pnodes[0].pnodes[0]
-# # print datanode
-# # print datanode.prev
-# # print datanode.next
-# # print datanode.next.next.next
+#     random.shuffle(seq)
+#     for num in seq:
+#         tree.insert(num, num)
 
+#     archive = list(seq)
+#     random.shuffle(seq)
+#     search = list(seq)
 
-tree = TestBPlusTree(2)
-# tree.insert(0, 0)
-tree.insert(100, 100)
-tree.insert(90, 90)
-tree.insert(80, 80)
-tree.insert(70, 70)
-tree.insert(60, 60)
-tree.insert(65, 65)
+#     for num in seq:
+#         node = tree.search(num)
+#         if node is None:
+#             print "**************************"
+#             print num
+#             print archive
+#             print search
+#             print "**************************"
+#             exit()
+#         try:
+#             tree.remove(num)
+#         except Exception as e:
+#             print "==========================="
+#             print num
+#             print archive
+#             print search
+#             print "==========================="
+#             exit()
 
-# import pdb
-# pdb.set_trace()
-
-tree.insert(50, 50)
-tree.insert(40, 40)
+#         node = tree.search(num)
+#         if node is not None and num in node.data:
+#             print "+++++++++++++++++++++++++"
+#             print num
+#             print archive
+#             print search
+#             print "+++++++++++++++++++++++++"
+#             exit()
 
 
-print tree
+# LOOP = 10000
+# LENGTH = 100
+# for length in xrange(1, LENGTH):
+#     print "Testing...", length
+#     for _ in xrange(LOOP):
+#         test(length)
+
+
+# 639
+# [994, 788, 200, 657, 130, 84, 135, 104, 768, 787, 789, 354, 762, 531, 973, 673, 530, 890, 928, 965, 739, 3, 168, 91, 136, 176, 666, 596, 114, 639]
+# [673, 91, 596, 890, 994, 973, 928, 354, 739, 168, 768, 3, 135, 176, 200, 104, 530, 762, 965, 136, 788, 639, 789, 114, 130, 531, 787, 657, 84, 666]
