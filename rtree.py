@@ -67,6 +67,11 @@ class RNode(object):
         self.rects = [None for _ in xrange(self.threshold)]
         self.pnodes = [None for _ in xrange(self.threshold)]
 
+    def mbr(self):
+        rect = Rectangle(self.dimension)
+        rect.resize(self.rects)
+        return rect
+
     def pointer(self):
         raise NotImplementedError()
 
@@ -85,6 +90,9 @@ class DataNode(object):
         self.min_length = base
 
         self.num = 0
+
+    def mbr(self):
+        raise NotImplementedError()
 
 
 class RTree(object):
@@ -136,8 +144,29 @@ class RTree(object):
 
         return results
 
+    def split(self, parent, ipos, node):
+        """
+            由于 R树 中节点内部是无序的，为了减少移动数据的开销
+            分裂后的两个节点一个放在分裂前节点的位置，一个放在末尾
+        """
+
+        if parent.isleaf is False:
+            new_node = self.allocate_namenode()
+            new_node.isleaf = node.isleaf
+
+            # TODO
+            return None
+
+        new_node = node.split()
+        parent.rects[parent.num-1] = new_node.mbr()
+        parent.pnodes[parent.num-1] = new_node
+        parent.num += 1
+        return None
+
     def insert(self, rect, doc):
         if self.root.num != self.threshold:
             return self.insert_nonfull(self.root, rect, doc)
 
-        
+        old_root = self.root
+        new_root = self.allocate_namenode()
+        new_root.rects[0] = old_root.keys[0]
