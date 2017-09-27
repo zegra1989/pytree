@@ -15,17 +15,15 @@ class FS(object):
         self.root_path = os.path.abspath(root_path or ".")
         self.strategy = strategy if strategy is not None else [8,8,8,8]
 
-    def filepath(self, seed):
-        ipos = 0
-        shards = []
-        for gap in self.strategy:
-            shards.append(seed[ipos:ipos+gap])
-            ipos += gap
-        return os.path.join(self.root_path, *shards)
-
     def generate_name(self):
         while True:
-            path = self.filepath(uuid.uuid4().get_hex())
+            ipos = 0
+            shards = []
+            seed = uuid.uuid4().get_hex()
+            for gap in self.strategy:
+                shards.append(seed[ipos:ipos+gap])
+                ipos += gap
+            path = os.path.join(self.root_path, *shards)
             if os.path.exists(path) is False:
                 break
         return path
