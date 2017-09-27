@@ -58,13 +58,13 @@ class MemBPlusTreeTest(unittest.TestCase):
         self.assertEqual(tree.root.num, 0)
 
     def test_random_degree(self):
-        tree = MemBPlusTree(int(random.random()*100))
+        tree = MemBPlusTree(random.randint(2,500))
         seq = self.random_insert(tree, 100000)
         self.random_search(tree, seq)
         self.assertEqual(tree.root.num, 0)
 
     def test_insert(self):
-        tree = MemBPlusTree(int(random.random()*100))
+        tree = MemBPlusTree(random.randint(2,500))
 
         seq = self.random_insert(tree, 60000)
         

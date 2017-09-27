@@ -58,13 +58,13 @@ class MemBTreeTest(unittest.TestCase):
         self.assertEqual(tree.root.num, 0)
 
     def test_random_degree(self):
-        tree = MemBTree(int(random.random()*100))
+        tree = MemBTree(random.randint(2,500))
         seq = self.random_insert(tree, 100000)
         self.random_search(tree, seq)
         self.assertEqual(tree.root.num, 0)
 
     def test_insert(self):
-        tree = MemBTree(int(random.random()*100))
+        tree = MemBTree(random.randint(2,500))
 
         seq = self.random_insert(tree, 60000)
         
@@ -121,13 +121,13 @@ class DiskBTreeTest(unittest.TestCase):
         self.assertEqual(tree.root.num, 0)
 
     def test_random_degree(self):
-        tree = DiskBTree(int(random.random()*100), "fsunittest")
+        tree = DiskBTree(random.randint(2,500), "fsunittest")
         seq = self.random_insert(tree, 1000)
         self.random_search(tree, seq)
         self.assertEqual(tree.root.num, 0)
 
     def test_insert(self):
-        tree = DiskBTree(int(random.random()*100), "fsunittest")
+        tree = DiskBTree(random.randint(2,500), "fsunittest")
 
         seq = self.random_insert(tree, 1000)
         
