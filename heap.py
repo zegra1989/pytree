@@ -6,7 +6,7 @@ reload(sys)
 sys.setdefaultencoding("utf-8")
 
 class Heap(object):
-    """docstring for Heap"""
+    """大顶堆"""
     def __init__(self, array=None, key=lambda x: x, cmp=cmp, reverse=False):
         super(Heap, self).__init__()
 
@@ -16,9 +16,26 @@ class Heap(object):
             self.cmp = lambda x,y: -cmp(key(x), key(y))
 
         self.heap = array or []
-        self.init_heap()
+        self._init_heap()
 
-    def heap_down(self, ipos):
+    def add(self, e):
+        self.heap.append(e)
+
+        ipos = len(self.heap)-1
+        while ipos > 0:
+            iparent = int((ipos-1)/2)
+            if self.cmp(self.heap[ipos], self.heap[iparent]) > 0:
+                self.heap[iparent],self.heap[ipos] = self.heap[ipos],self.heap[iparent]
+            ipos = iparent
+
+    def pop(self, ipos=0):
+        element = self.heap[ipos]
+        self.heap[ipos] = self.heap.pop()
+
+        self._heap_down(ipos)
+        return element
+        
+    def _heap_down(self, ipos):
 
         ileft = 2*ipos+1
         iright = 2*ipos+2
@@ -37,27 +54,11 @@ class Heap(object):
             ileft = 2*ipos+1
             iright = 2*ipos+2
 
-    def init_heap(self):
+    def _init_heap(self):
         for ipos in xrange(int(len(self.heap)/2)-1, -1, -1):
-            self.heap_down(ipos)
+            self._heap_down(ipos)
 
-    def add(self, e):
-        self.heap.append(e)
-
-        ipos = len(self.heap)-1
-        while ipos > 0:
-            iparent = int((ipos-1)/2)
-            if self.cmp(self.heap[ipos], self.heap[iparent]) > 0:
-                self.heap[iparent],self.heap[ipos] = self.heap[ipos],self.heap[iparent]
-            ipos = iparent
-
-    def pop(self, ipos=0):
-        element = self.heap[ipos]
-        self.heap[ipos] = self.heap.pop()
-
-        self.heap_down(ipos)
-        return element
-
+    @property
     def head(self):
         if len(self.heap) > 0:
             return self.heap[0]
@@ -72,7 +73,7 @@ def heap_sort(array, key=lambda x: x, cmp=cmp, reverse=False, num=None):
 
     last = length-1
     if num is None or num > last or num < 0:
-        num = last
+        num = length
     else:
         reverse = not reverse
 
