@@ -64,15 +64,23 @@ class Heap(object):
         return None
 
 
-def heap_sort(array, key=lambda x: x, cmp=cmp, reverse=False):
+def heap_sort(array, key=lambda x: x, cmp=cmp, reverse=False, num=None):
+
+    length = len(array)
+    if length == 0:
+        return array
+
+    last = length-1
+    if num is None or num > last or num < 0:
+        num = last
+    else:
+        reverse = not reverse
+
     heap = Heap(array, key, cmp, reverse)
 
     lst = heap.heap
-    last = len(lst)-1
-    if last < 0:
-        return lst
-
-    while last > 0:
+    diff = last - num
+    while last > diff:
         ipos = 0
         lst[ipos], lst[last] = lst[last], lst[ipos]
 
@@ -94,6 +102,5 @@ def heap_sort(array, key=lambda x: x, cmp=cmp, reverse=False):
 
         last -= 1
 
-    return lst
-
+    return lst[length-num:length][::-1]
 
