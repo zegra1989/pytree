@@ -29,6 +29,15 @@ class Heap(object):
             ipos = iparent
 
     def pop(self, ipos=0):
+
+        length = len(self.heap)
+        if ipos > length:
+            raise Exception("Heap has no position {0}, \
+                             max positon is {1}", ipos, length-1)
+
+        if length == 1:
+            return self.heap.pop()
+
         element = self.heap[ipos]
         self.heap[ipos] = self.heap.pop()
 
@@ -64,6 +73,8 @@ class Heap(object):
             return self.heap[0]
         return None
 
+    def __len__(self):
+        return len(self.heap)
 
 def heap_sort(array, key=lambda x: x, cmp=cmp, reverse=False, num=None):
 
@@ -104,4 +115,3 @@ def heap_sort(array, key=lambda x: x, cmp=cmp, reverse=False, num=None):
         last -= 1
 
     return lst[length-num:length][::-1]
-
