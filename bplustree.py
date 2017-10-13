@@ -295,7 +295,6 @@ class BPlusTree(object):
         else:
             irpos = 0
             while irpos < rchild.num:
-                # TODO
                 child.keys[child.num+irpos] = rchild.keys[irpos]
                 child.pnodes[child.num+irpos] = rchild.pnodes[irpos]
                 irpos += 1
@@ -313,7 +312,7 @@ class BPlusTree(object):
 
     def guarantee(self, node, ipos):
         """
-            确保 node.pnode[ipos] 拥有至少 t 个关键词
+            确保 node.pnodes[ipos] 拥有至少 t 个关键词
         """
 
         child = node.pnodes[ipos]
