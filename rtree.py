@@ -5,6 +5,8 @@ import sys
 reload(sys)
 sys.setdefaultencoding("utf-8")
 
+import sys
+
 from heap import Heap
 
 class Rectangle(object):
@@ -35,6 +37,34 @@ class Rectangle(object):
                 self.min_dim[ipos] = entry[ipos]
             elif entry[ipos] > self.max_dim[ipos]:
                 self.max_dim[ipos] = entry[ipos]
+
+    def expand_area(self, entry):
+
+        new_area = 1.0
+        curr_area = 1.0
+        for ipos in xrange(self.dimension):
+
+            max_value = self.max_dim[ipos]
+            min_value = self.min_dim[ipos]
+
+            try:
+                curr_area *= (max_value - min_value)
+            except TypeError as e:
+                # 未完全初始化的 Rectangle
+                return -1
+
+            if entry[ipos] > self.max_dim[ipos]:
+                max_value = entry[ipos]
+            elif entry[ipos] < self.min_dim[ipos]:
+                min_value = entry[ipos]
+
+            try:
+                new_area *= (max_value - min_value)
+            except TypeError as e:
+                # 未完全初始化的 Rectangle
+                return -1
+
+        return new_area - curr_area
 
     def overlap_area(self, rect):
         area = 1.0
@@ -95,6 +125,23 @@ class RNode(object):
     def pointer(self):
         return self
 
+    def most_overlap_pos(self, ipos):
+        """
+            从 self.pnodes 中找到与 self.pnodes[ipos] 重合度最大的点的位置
+        """
+
+        ichild_pos = 0
+        max_overlap = -1
+        max_overlap_pos = 0
+        while ichild_pos < node.num:
+            if ipos == ichild_pos:
+                continue
+            overlap = child.overlap_area(node.pnodes[ichild_pos].mbr)
+            if max_overlap < overlap:
+                max_overlap = overlap
+                max_overlap_pos = ichild_pos
+
+        return max_overlap_pos
 
 class DataNode(object):
     """docstring for DataNode"""
@@ -110,8 +157,7 @@ class DataNode(object):
             base += 1
         self.min_length = base
 
-    def mbr(self):
-        raise NotImplementedError()
+        self.mbr = Rectangle(self.dimension)
 
 
 class RTree(object):
@@ -235,48 +281,120 @@ class RTree(object):
 
     def insert_nonfull(self, node, entry, doc):
 
-        #TODO
-        pass
+        ipos = 0
+        min_expand = sys.maxint
+        min_expand_pos = 0
+        while ipos < node.num:
+            expand_area = node.pnodes[ipos].mbr.expand_area(entry)
+            if min_expand > expand_area:
+                min_expand = expand_area
+                min_expand_pos = ipos
 
-
-        ipos = node.num-1
-        while ipos >= 0 and key < node.keys[ipos]:
-            ipos -= 1
-
-        # 如果 ipos < 0，则说明要插入点小于当前节点中最小关键词
-        if ipos < 0:
-            node.keys[0] = key
-            ipos = 0
-
+        node.involve(entry)
         if node.isleaf is True:
             datanode = node.pnodes[ipos]
             if datanode is None:
                 datanode = self.allocate_datanode()
-                node.keys[ipos] = key
                 node.pnodes[ipos] = datanode
                 node.num += 1
                 # 此处不用连接 DataNode 的链表，因为此处仅在初始化时运行一次
 
             if datanode.isfull() is True:
-                if datanode.is_increase is True and datanode.last_insert_pos > key:
-                    datanode.is_increase = False
-                    datanode.n_directions = 1
-                elif datanode.is_increase is False and datanode.last_insert_pos < key:
-                    datanode.is_increase = True
-                    datanode.n_directions = 1
                 self.split(node, ipos, datanode)
-                if node.keys[ipos+1] < key:
+                if node.pnodes[ipos].mbr.expand_area(entry) < \
+                        node.pnodes[ipos+1].mbr.expand_area(entry):
                     ipos += 1
 
             datanode = node.pnodes[ipos]
-            datanode.insert(key, doc)
-            node.keys[ipos] = datanode.low_key
+            datanode.insert(entry, doc)
+            node.rects[ipos] = datanode.mbr
             return None
 
         child = node.pnodes[ipos]
         if child.num == self.threshold:
             self.split(node, ipos, child)
-        if node.keys[ipos+1] is not None and node.keys[ipos+1] < key:
+        if node.pnodes[ipos].mbr.expand_area(entry) < \
+                node.pnodes[ipos+1].mbr.expand_area(entry):
             child = node.pnodes[ipos+1]
-        return self.insert_nonfull(child, key, doc)
+        return self.insert_nonfull(child, entry, doc)
+
+    def merge(self, node, ipos):
+        """
+            将当前节点 位置(ipos) 对应的孩子与其重合面积最大的兄弟合并
+        """
+
+        child = node.pnodes[ipos]
+        # 在 node 中寻找与 child 重合面积最大的兄弟
+        max_overlap_pos = node.most_overlap_pos(ipos)
+        mchild = node.pnodes[max_overlap_pos]
+
+        if node.isleaf is True:
+            child.merge(mchild)
+            self.deallocate_datanode(mchild)
+        else:
+            impos = 0
+            while impos < mchild.num:
+                child.rects[child.num+impos] = mchild.rects[impos]
+                child.pnodes[child.num+impos] = mchild.pnodes[impos]
+                impos += 1
+            child.num += mchild.num
+            child.adjust()
+            self.deallocate_namenode(mchild)
+
+        node.rects[max_overlap_pos] = node.rects[node.num-1]
+        node.pnodes[max_overlap_pos] = node.pnodes[node.num-1]
+        node.num -= 1
+        # node 的 mbr 没有变化，不用调用 adjust()
+        return ipos
+
+    def guarantee(self, node, ipos):
+        """
+            确保 node.pnodes[ipos] 拥有至少 t 个孩子
+        """
+
+        child = node.pnodes[ipos]
+        if child.num > self.degree:
+            return ipos
+
+        # 在 node 中寻找与 child 重合面积最大的兄弟
+        max_overlap_pos = node.most_overlap_pos(ipos)
+        mchild = node.pnodes[max_overlap_pos]
+
+        # TODO: 在 mchild 中找到与 child 重合度最高的点， 将其合并到 child 中
+
+
+        # 如果 ipos = 0，则 child 没有左兄弟
+        if ipos > 0:
+            lbrother = node.pnodes[ipos-1]
+            if lbrother.num > self.degree:
+                icpos = child.num
+                while icpos > 0:
+                    child.keys[icpos] = child.keys[icpos-1]
+                    child.pnodes[icpos] = child.pnodes[icpos-1]
+                    icpos -= 1
+                child.keys[0] = lbrother.keys[lbrother.num-1]
+                child.pnodes[0] = lbrother.pnodes[lbrother.num-1]
+                child.num += 1
+
+                node.keys[ipos] = child.keys[0]
+                lbrother.num -= 1
+                return ipos
+
+        # 如果 ipos = node.num-1， 则 child 没有右兄弟
+        if ipos < node.num-1:
+            rbrother = node.pnodes[ipos+1]
+            if rbrother.num > self.degree:
+                child.keys[child.num] = rbrother.keys[0]
+                child.pnodes[child.num] = rbrother.pnodes[0]
+                child.num += 1
+
+                irpos = 0
+                while irpos < rbrother.num-1:
+                    rbrother.keys[irpos] = rbrother.keys[irpos+1]
+                    rbrother.pnodes[irpos] = rbrother.pnodes[irpos+1]
+                    irpos += 1
+
+                node.keys[ipos+1] = rbrother.keys[0]
+                rbrother.num -= 1
+                return ipos
 
