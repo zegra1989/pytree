@@ -11,11 +11,16 @@ from heap import Heap
 
 class Rectangle(object):
     """docstring for Rectangle"""
-    def __init__(self, dimension):
+    def __init__(self, dimension, entry=None):
         super(Rectangle, self).__init__()
         self.dimension = dimension
         self.min_dim = [None for _ in xrange(dimension)]
         self.max_dim = [None for _ in xrange(dimension)]
+
+        if entry is not None:
+            for ipos in xrange(self.dimension):
+                self.min_dim[ipos] = entry[ipos]
+                self.max_dim[ipos] = entry[ipos]
 
     def resize(self, rects):
         """
@@ -130,17 +135,16 @@ class RNode(object):
             从 self.pnodes 中找到与 self.pnodes[ipos] 重合度最大的点的位置
         """
 
-        ichild_pos = 0
-        max_overlap = -1
-        max_overlap_pos = 0
-        while ichild_pos < node.num:
+        child = self.pnodes[ipos]
+        ichild_pos, max_overlap, max_overlap_pos = 0, -1, 0
+        while ichild_pos < self.num:
             if ipos == ichild_pos:
                 continue
-            overlap = child.overlap_area(node.pnodes[ichild_pos].mbr)
+            overlap = child.overlap_area(self.pnodes[ichild_pos].mbr)
             if max_overlap < overlap:
                 max_overlap = overlap
                 max_overlap_pos = ichild_pos
-
+            ichild_pos += 1
         return max_overlap_pos
 
 class DataNode(object):
@@ -196,6 +200,7 @@ class RTree(object):
         while ipos >= 0:
             if rect in node.rects[ipos]:
                 indexes.append(ipos)
+            ipos -= 1
 
         if len(indexes) == 0:
             return []
@@ -289,6 +294,8 @@ class RTree(object):
             if min_expand > expand_area:
                 min_expand = expand_area
                 min_expand_pos = ipos
+            ipos += 1
+        ipos = min_expand_pos
 
         node.involve(entry)
         if node.isleaf is True:
@@ -350,6 +357,7 @@ class RTree(object):
     def guarantee(self, node, ipos):
         """
             确保 node.pnodes[ipos] 拥有至少 t 个孩子
+            注意： node 一定是非叶子节点
         """
 
         child = node.pnodes[ipos]
@@ -357,44 +365,75 @@ class RTree(object):
             return ipos
 
         # 在 node 中寻找与 child 重合面积最大的兄弟
-        max_overlap_pos = node.most_overlap_pos(ipos)
-        mchild = node.pnodes[max_overlap_pos]
+        ichild_pos, max_overlap, max_overlap_pos = 0, -1, -1
+        while ichild_pos < node.num:
+            if ipos == ichild_pos:
+                continue
+            candidate = node.pnodes[ichild_pos]
+            if candidate.num <= self.degree:
+                continue
+            overlap = child.overlap_area(candidate.mbr)
+            if max_overlap < overlap:
+                max_overlap = overlap
+                max_overlap_pos = ichild_pos
+            ichild_pos += 1
 
-        # TODO: 在 mchild 中找到与 child 重合度最高的点， 将其合并到 child 中
+        if max_overlap_pos > 0:
+            mchild = node.pnodes[max_overlap_pos]
 
+            # 在 mchild 中找到与 child 重合度最高的点， 将其合并到 child.pnodes 中
+            ichild_pos, max_overlap, max_overlap_pos = 0, -1, 0
+            while ichild_pos < mchild.num:
+                overlap = child.overlap_area(mchild.pnodes[ichild_pos].mbr)
+                if max_overlap < overlap:
+                    max_overlap = overlap
+                    max_overlap_pos = ichild_pos
+                ichild_pos += 1
+            child.pnodes[child.num] = mchild.pnodes[max_overlap_pos]
+            child.rects[child.num] = mchild.rects[max_overlap_pos]
+            child.num += 1
+            child.adjust()
 
-        # 如果 ipos = 0，则 child 没有左兄弟
-        if ipos > 0:
-            lbrother = node.pnodes[ipos-1]
-            if lbrother.num > self.degree:
-                icpos = child.num
-                while icpos > 0:
-                    child.keys[icpos] = child.keys[icpos-1]
-                    child.pnodes[icpos] = child.pnodes[icpos-1]
-                    icpos -= 1
-                child.keys[0] = lbrother.keys[lbrother.num-1]
-                child.pnodes[0] = lbrother.pnodes[lbrother.num-1]
-                child.num += 1
+            impos = max_overlap_pos
+            while impos < mchild.num-1:
+                mchild.rects[impos] = mchild.rects[impos+1]
+                mchild.pnodes[impos] = mchild.pnodes[impos+1]
+                impos += 1
+            mchild.num -= 1
+            mchild.adjust()
+            return ipos
 
-                node.keys[ipos] = child.keys[0]
-                lbrother.num -= 1
-                return ipos
+        return self.merge(node, ipos)
 
-        # 如果 ipos = node.num-1， 则 child 没有右兄弟
-        if ipos < node.num-1:
-            rbrother = node.pnodes[ipos+1]
-            if rbrother.num > self.degree:
-                child.keys[child.num] = rbrother.keys[0]
-                child.pnodes[child.num] = rbrother.pnodes[0]
-                child.num += 1
+    def remove_key(self, node, entry):
 
-                irpos = 0
-                while irpos < rbrother.num-1:
-                    rbrother.keys[irpos] = rbrother.keys[irpos+1]
-                    rbrother.pnodes[irpos] = rbrother.pnodes[irpos+1]
-                    irpos += 1
+        ipos = 0
+        indexes = []
+        min_expand, min_expand_pos = sys.maxint, 0
+        while ipos < node.num:
+            expand_area = node.pnodes[ipos].mbr.expand_area(entry)
+            if expand_area == 0:
+                indexes.append(ipos)
+            ipos += 1
 
-                node.keys[ipos+1] = rbrother.keys[0]
-                rbrother.num -= 1
-                return ipos
+        if len(indexes) == 0:
+            return None
 
+        if node.isleaf is False:
+            icpos = self.guarantee(node, ipos)
+            child = node.pnodes[icpos]
+            self.remove_key(child, entry)
+
+        # TODO
+
+        if len(indexes) == 0:
+            return []
+
+        if node.isleaf is True:
+            return map(lambda x: self.load_docs(node.pnodes[x]), indexes)
+
+        results = []
+        for ipos in indexes:
+            results.extend(self.search(rect, node.pnodes[ipos]))
+
+        return results
